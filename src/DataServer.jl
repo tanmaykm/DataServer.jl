@@ -19,12 +19,18 @@ type DataFrameServer
         get(app, "/") do req, res
             join([
                 "DataFrameServer serves CSV data files and simple queries on them.",
-                "Commands:",
-                "/list: list hosted data files",
-                "/meta/<dataset> : provides column names, types, num rows etc.",
-                "/q/<dataset> : dump all rows",
-                "/q/<dataset>/<col_id>/<operator>/<col_val>: filter with operators like eq, gt, lt, contains, range",
-                "/q/<dataset>?expr=<expression> : apply expression on dataset and return result"
+                "",
+                "<b>Commands:</b>" *
+                    "<ul>" *
+                        "<li><a href=\"/list\">/list</a>: list hosted data files</li>" *
+                        "<li>/meta/[dataset] : provides column names, types, num rows etc.</li>" *
+                        "<li>/q/[dataset] : dump all rows</li>" *
+                        #"<li>/q/<dataset>/<col_id>/<operator>/<col_val>: filter with operators like eq, gt, lt, contains, range</li>" *
+                        "<li>/q/[dataset]?q=[expression] : apply expression on dataset and return result</li>" *
+                    "</ul>",
+                "",
+                "<b>Example Expressions:</b>" *
+                    "<ul><li>Total__lte__100</li><li>(Sr__lt__100)__and__((Total__gt__600)__or__(Total__lt__200))</li></ul>"
                 ],
             "<br/>")
         end
@@ -38,38 +44,47 @@ type DataFrameServer
             JSON.json(csvnames)
         end
 
-        for cn in csvnames
-            route(app, GET, "/q/$(cn)") do req, res
-                try
-                    println("read table")
-                    csvfile = joinpath(data_dir, string(cn, ".csv"))
-                    dt = readtable(csvfile)
-                    query = urlparam(req, :expr)
-                    if nothing == query
-                        return JSON.json(dt)
-                    else
-                        println("query=[$(query)]")
-                        println("query_to_expr=$(query_to_expr(query))")
-                        expr = query_to_expr(query)
-                        return JSON.json(dt[expr, :])
-                    end
-                catch ex
-                    return string(ex)
-                end
+        route(app, GET, "/meta/<cn::String>") do req, res
+            try
+                cn = routeparam(req, :cn)
+                dt = get_table(data_dir, cn)
+                (nothing == dt) && (res.headers["Status"] = 404; return render("404.ejl"))
+                iob = IOBuffer()
+                write(iob, "<html><body><pre>")
+                describe(iob, dt)
+                write(iob, "</pre></body></html>")
+                return takebuf_string(iob)
+            catch ex
+                return string(ex)
             end
-
-            #route(app, GET, "/q/$(cn)/<col::String>") do req, res
-            #    col = routeparam(req, :col)
-            #    csvfile = joinpath(data_dir, string(cn, ".csv"))
-            #    dt = readtable(csvfile)
-            #    JSON.json(dt)
-            #end
         end
 
-        get(app, "/*") do req, res
-            res.headers["Status"] = 404
-            render("404.ejl")
+        route(app, GET, "/q/<cn::String>") do req, res
+            try
+                cn = routeparam(req, :cn)
+                #println("read table: $cn")
+
+                dt = get_table(data_dir, cn)
+                (nothing == dt) && (res.headers["Status"] = 404; return render("404.ejl"))
+
+                query = urlparam(req, :expr)
+                if nothing == query
+                    return JSON.json(dt)
+                else
+                    #println("query=[$(query)]")
+                    #println("query_to_expr=$(query_to_expr(query))")
+                    expr = query_to_expr(query)
+                    return JSON.json(dt[expr, :])
+                end
+            catch ex
+                return string(ex)
+            end
         end
+
+        #get(app, "/*") do req, res
+        #    res.headers["Status"] = 404
+        #    render("404.ejl")
+        #end
 
         new(port, data_dir, app, false)
     end
@@ -96,6 +111,19 @@ function start(ds::DataFrameServer)
     ds.is_running = true
     start(ds.app, ds.port)
     ds.is_running = false
+end
+
+const _table_cache = Dict{String,DataFrame}()
+function get_table(data_dir::String, csv::String)
+    haskey(_table_cache, csv) && return _table_cache[csv]
+
+    csvfile = joinpath(data_dir, string(csv, ".csv"))
+    println("loking for file [$csvfile]")
+    !isfile(csvfile) && return nothing
+    _table_cache[csv] = readtable(csvfile)
+end
+
+function as_json(df::DataFrame, compact::Bool=false)
 end
 
 end
