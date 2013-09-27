@@ -21,15 +21,15 @@ The server can be accessed with:
 
 #### Query Format:
 Operators supported:
-- __eq__ 
-- __lt__ 
-- __lte__ 
-- __gt__ 
-- __gte__ 
-- __and__ 
-- __or__ 
+- `__eq__`
+- `__lt__`
+- `__lte__`
+- `__gt__`
+- `__gte__`
+- `__and__`
+- `__or__`
 
 Examples:
-- Total__lte__100
-- (Sr__lt__100)__and__((Total__gt__600)__or__(Total__lt__200))
+- `Total__lte__100`
+- `(Sr__lt__100)__and__((Total__gt__600)__or__(Total__lt__200))`
 
