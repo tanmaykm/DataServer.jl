@@ -23,6 +23,7 @@ type DataFrameServer
                 "<b>Commands:</b>" *
                     "<ul>" *
                         "<li><a href=\"/list\">/list</a>: list hosted data files</li>" *
+                        "<li><a href=\"/clearcache\">/clearcache</a>: refresh cached files</li>" *
                         "<li>/meta/[dataset] : provides column names, types, num rows etc.</li>" *
                         "<li>/q/[dataset] : dump all rows</li>" *
                         #"<li>/q/<dataset>/<col_id>/<operator>/<col_val>: filter with operators like eq, gt, lt, contains, range</li>" *
@@ -43,6 +44,11 @@ type DataFrameServer
         get(app, "/list") do req, res
             JSON.json(csvnames)
         end
+
+        get(app, "/clearcache") do req, res
+            empty!(_table_cache)
+            "cache cleared"
+        end    
 
         route(app, GET, "/meta/<cn::String>") do req, res
             try

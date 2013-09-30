@@ -33,3 +33,9 @@ Examples:
 - `Total__lte__100`
 - `(Sr__lt__100)__and__((Total__gt__600)__or__(Total__lt__200))`
 
+
+#### TODO:
+- JSON protocol wrapping all responses.
+- Templates for formatting responses.
+- Default display pages to show tabular data.
+
