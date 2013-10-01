@@ -26,8 +26,8 @@ type DataFrameServer
                         "<li><a href=\"/clearcache\">/clearcache</a>: refresh cached files</li>" *
                         "<li>/meta/[dataset] : provides column names, types, num rows etc.</li>" *
                         "<li>/q/[dataset] : dump all rows</li>" *
-                        #"<li>/q/<dataset>/<col_id>/<operator>/<col_val>: filter with operators like eq, gt, lt, contains, range</li>" *
                         "<li>/q/[dataset]?q=[expression] : apply expression on dataset and return result</li>" *
+                        "<li>/d/[dataset]?q=[expression]&filename=[name] : same as above, but returns results as downloadable CSV (filename is optional)</li>" *
                     "</ul>",
                 "",
                 "<b>Example Expressions:</b>" *
@@ -37,6 +37,7 @@ type DataFrameServer
         end
 
         get(app, "/list") do req, res
+            res.headers["Content-Type"] = "application/json"
             csvnames = readdir(data_dir)
             for idx in 1:length(csvnames)
                 csvnames[idx] = split(csvnames[idx], '.')[1]
@@ -46,11 +47,13 @@ type DataFrameServer
         end
 
         get(app, "/clearcache") do req, res
+            res.headers["Content-Type"] = "application/json"
             empty!(_table_cache)
             json_resp(0, "cache cleared")
         end    
 
         route(app, GET, "/meta/<cn::String>") do req, res
+            res.headers["Content-Type"] = "application/json"
             try
                 cn = routeparam(req, :cn)
                 dt = get_table(data_dir, cn)
@@ -66,24 +69,30 @@ type DataFrameServer
         end
 
         route(app, GET, "/q/<cn::String>") do req, res
-            #try
-                cn = routeparam(req, :cn)
-                #println("read table: $cn")
-
-                dt = get_table(data_dir, cn)
+            res.headers["Content-Type"] = "application/json"
+            try
+                dt = get_result_dataframe(req, res, data_dir)
                 (nothing == dt) && (res.headers["Status"] = 404; return render("404.ejl"))
 
-                query = urlparam(req, :expr)
-                if nothing != query
-                    println("query=[$(query)]")
-                    println("query_to_expr=$(query_to_expr(query))")
-                    expr = query_to_expr(query)
-                    dt =  dt[expr, :]
-                end
                 return json_resp(0, "success", dt, false)
-            #catch ex
-            #    return json_resp(-1, "error: $(string(ex))")
-            #end
+            catch ex
+                return json_resp(-1, "error: $(string(ex))")
+            end
+        end
+
+        route(app, GET, "/d/<cn::String>") do req, res
+            res.headers["Content-Type"] = "text/csv"
+            try
+                dt = get_result_dataframe(req, res, data_dir)
+                (nothing == dt) && (res.headers["Status"] = 404; return render("404.ejl"))
+    
+                filename = urlparam(req, :filename)
+                res.headers["Content-Disposition"] = (nothing == filename) ? "attachment" : "attachment; filename=$(filename)"
+                return as_csv(dt)
+            catch ex
+                res.headers["Status"] = 500
+                return render("500.ejl")
+            end
         end
 
         new(port, data_dir, app, false)
@@ -99,6 +108,23 @@ const subst_exprs = {
     "__and__" => ".*",
     "__or__" => ".+"
 }
+
+function get_result_dataframe(req, res, data_dir)
+    cn = routeparam(req, :cn)
+    #println("read table: $cn")
+
+    dt = get_table(data_dir, cn)
+    (nothing == dt) && (return nothing)
+
+    query = urlparam(req, :expr)
+    if nothing != query
+        #println("query=[$(query)]")
+        #println("query_to_expr=$(query_to_expr(query))")
+        expr = query_to_expr(query)
+        dt =  dt[expr, :]
+    end
+    dt
+end
 
 function query_to_expr(q::String)
     for (exp,repl) in subst_exprs
@@ -118,7 +144,7 @@ function get_table(data_dir::String, csv::String)
     haskey(_table_cache, csv) && return _table_cache[csv]
 
     csvfile = joinpath(data_dir, string(csv, ".csv"))
-    println("loking for file [$csvfile]")
+    #println("loking for file [$csvfile]")
     !isfile(csvfile) && return nothing
     _table_cache[csv] = readtable(csvfile)
 end
@@ -136,6 +162,12 @@ function as_rows(df::DataFrame)
         res_arr[idx] = row_dict
     end
     res_arr
+end
+
+function as_csv(df::DataFrame)
+    iob = IOBuffer()
+    printtable(iob, df)
+    takebuf_string(iob)
 end
 
 function json_resp(resp_code::Int, resp_msg::String, data::Any=nothing, compact::Bool=false)
