@@ -36,18 +36,18 @@ type DataFrameServer
             "<br/>")
         end
 
-        csvnames = readdir(data_dir)
-        for idx in 1:length(csvnames)
-            csvnames[idx] = split(csvnames[idx], '.')[1]
-        end
-
         get(app, "/list") do req, res
+            csvnames = readdir(data_dir)
+            for idx in 1:length(csvnames)
+                csvnames[idx] = split(csvnames[idx], '.')[1]
+            end
             JSON.json(csvnames)
+            json_resp(0, "success", csvnames)
         end
 
         get(app, "/clearcache") do req, res
             empty!(_table_cache)
-            "cache cleared"
+            json_resp(0, "cache cleared")
         end    
 
         route(app, GET, "/meta/<cn::String>") do req, res
@@ -59,14 +59,14 @@ type DataFrameServer
                 write(iob, "<html><body><pre>")
                 describe(iob, dt)
                 write(iob, "</pre></body></html>")
-                return takebuf_string(iob)
+                return json_resp(0, "success", takebuf_string(iob))
             catch ex
-                return string(ex)
+                return json_resp(-1, "error: $(string(ex))")
             end
         end
 
         route(app, GET, "/q/<cn::String>") do req, res
-            try
+            #try
                 cn = routeparam(req, :cn)
                 #println("read table: $cn")
 
@@ -74,23 +74,17 @@ type DataFrameServer
                 (nothing == dt) && (res.headers["Status"] = 404; return render("404.ejl"))
 
                 query = urlparam(req, :expr)
-                if nothing == query
-                    return JSON.json(dt)
-                else
-                    #println("query=[$(query)]")
-                    #println("query_to_expr=$(query_to_expr(query))")
+                if nothing != query
+                    println("query=[$(query)]")
+                    println("query_to_expr=$(query_to_expr(query))")
                     expr = query_to_expr(query)
-                    return JSON.json(dt[expr, :])
+                    dt =  dt[expr, :]
                 end
-            catch ex
-                return string(ex)
-            end
+                return json_resp(0, "success", dt, false)
+            #catch ex
+            #    return json_resp(-1, "error: $(string(ex))")
+            #end
         end
-
-        #get(app, "/*") do req, res
-        #    res.headers["Status"] = 404
-        #    render("404.ejl")
-        #end
 
         new(port, data_dir, app, false)
     end
@@ -129,7 +123,34 @@ function get_table(data_dir::String, csv::String)
     _table_cache[csv] = readtable(csvfile)
 end
 
-function as_json(df::DataFrame, compact::Bool=false)
+function as_rows(df::DataFrame)
+    nr = nrow(df)
+    cnames = colnames(df)
+    res_arr = Array(Dict{String,Any}, nr)
+    for idx in 1:nr
+        row_dict = Dict{String,Any}()
+        for cidx in 1:length(cnames)
+            cn = cnames[cidx]
+            row_dict[cn] = df[cidx][idx]
+        end
+        res_arr[idx] = row_dict
+    end
+    res_arr
 end
 
+function json_resp(resp_code::Int, resp_msg::String, data::Any=nothing, compact::Bool=false)
+    resp = Dict{String, Any}()
+    resp["code"] = resp_code
+    resp["msg"] = resp_msg
+    if nothing != data
+        if isa(data, DataFrame) 
+            resp["data"] = compact ? data : as_rows(data)
+        else
+            resp["data"] = data
+        end
+    end
+    JSON.json(resp)
 end
+
+end # module
+

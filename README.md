@@ -15,6 +15,7 @@ Morsel is listening on 8000...
 
 The server can be accessed with:
 - `/list`: list hosted dataset names
+- `/clearcache`: refresh cached files
 - `/meta/[dataset]`: provides column names, types, num rows etc.
 - `/q/[dataset]`: dump all rows
 - `/q/[dataset]?q=[query expression]`: return subset matching query expression
