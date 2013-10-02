@@ -25,8 +25,7 @@ type DataFrameServer
                         "<li><a href=\"/list\">/list</a>: list hosted data files</li>" *
                         "<li><a href=\"/clearcache\">/clearcache</a>: refresh cached files</li>" *
                         "<li>/meta/[dataset] : provides column names, types, num rows etc.</li>" *
-                        "<li>/q/[dataset] : dump all rows</li>" *
-                        "<li>/q/[dataset]?q=[expression] : apply expression on dataset and return result</li>" *
+                        "<li>/q/[dataset]?q=[expression] : return dataset or its subset matching optional query expression</li>" *
                         "<li>/d/[dataset]?q=[expression]&filename=[name] : same as above, but returns results as downloadable CSV (filename is optional)</li>" *
                     "</ul>",
                 "",
@@ -58,11 +57,8 @@ type DataFrameServer
                 cn = routeparam(req, :cn)
                 dt = get_table(data_dir, cn)
                 (nothing == dt) && (res.headers["Status"] = 404; return render("404.ejl"))
-                iob = IOBuffer()
-                write(iob, "<html><body><pre>")
-                describe(iob, dt)
-                write(iob, "</pre></body></html>")
-                return json_resp(0, "success", takebuf_string(iob))
+
+                return json_resp(0, "success", meta(dt))
             catch ex
                 return json_resp(-1, "error: $(string(ex))")
             end
@@ -116,7 +112,9 @@ function get_result_dataframe(req, res, data_dir)
     dt = get_table(data_dir, cn)
     (nothing == dt) && (return nothing)
 
-    query = urlparam(req, :expr)
+    query = urlparam(req, :q)
+    (nothing == query) && (query = urlparam(req, :expr))
+
     if nothing != query
         #println("query=[$(query)]")
         #println("query_to_expr=$(query_to_expr(query))")
@@ -139,6 +137,8 @@ function start(ds::DataFrameServer)
     ds.is_running = false
 end
 
+##
+# CACHING
 const _table_cache = Dict{String,DataFrame}()
 function get_table(data_dir::String, csv::String)
     haskey(_table_cache, csv) && return _table_cache[csv]
@@ -149,6 +149,53 @@ function get_table(data_dir::String, csv::String)
     _table_cache[csv] = readtable(csvfile)
 end
 
+##
+# METADATA 
+function meta(df::DataFrame)
+    mdict = Dict{String,Any}()
+    mdict["nrows"] = nrow(df)
+
+    cn = colnames(df)
+    mdict["columns"] = cn
+
+    colmetas = Dict{String,Any}()
+    for c in 1:ncol(df)
+        colmetas[cn[c]] = column_meta(Dict{String,Any}(), df[c])
+    end
+    mdict["colmetas"] = colmetas
+    return mdict
+end
+
+function column_meta{T<:Number}(dict::Dict{String,Any}, dv::AbstractDataVector{T})
+    if all(isna(dv))
+        dict["allna"] = true
+        return
+    end
+    filtered = float(removeNA(dv))
+    qs = quantile(filtered, [0, .25, .5, .75, 1])
+    statNames = ["min", "qu1", "median", "mean", "qu3", "max"]
+    statVals = [qs[1:3], mean(filtered), qs[4:5]]
+    for i = 1:6
+        dict[statNames[i]] = statVals[i]
+    end
+    nas = sum(isna(dv))
+    dict["na_count"] = nas
+    dict["na_percent"] = round(nas*100/length(dv))
+    return dict
+end
+function column_meta{T}(dict::Dict{String,Any}, dv::AbstractDataVector{T})
+    dict["is_pooled"] = isa(dv, PooledDataVector)
+    dict["length"] = length(dv)
+    dict["type"] = (isa(dv, PooledDataVector) ? "Pooled " : "") * string(eltype(dv))
+    dict["na_count"] = sum(isna(dv))
+    dict["na_percent"] = round(sum(isna(dv))*100/length(dv), 2)
+    dict["unique_count"] = length(unique(dv))
+    return dict
+end
+
+
+##
+# FORMATTING
 function as_rows(df::DataFrame)
     nr = nrow(df)
     cnames = colnames(df)

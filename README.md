@@ -17,8 +17,8 @@ The server can be accessed with:
 - `/list`: list hosted dataset names
 - `/clearcache`: refresh cached files
 - `/meta/[dataset]`: provides column names, types, num rows etc.
-- `/q/[dataset]`: dump all rows
-- `/q/[dataset]?q=[query expression]`: return subset matching query expression
+- `/q/[dataset]?q=[query expression]`: return dataset or its subset matching optional query expression
+- `/d/[dataset]?q=[query expression]&filename=[name]`: same as above, but returns results as downloadable CSV (filename is optional)
 
 #### Query Format:
 Operators supported:
@@ -34,9 +34,17 @@ Examples:
 - `Total__lte__100`
 - `(Sr__lt__100)__and__((Total__gt__600)__or__(Total__lt__200))`
 
+#### JSON Response Format:
+All JSON responses are of the form:
+````
+{
+    "code": 0,
+    "msg":  "message string corresponding to code",
+    "data": [response data]
+}
+````
 
 #### TODO:
-- JSON protocol wrapping all responses.
 - Templates for formatting responses.
 - Default display pages to show tabular data.
 
